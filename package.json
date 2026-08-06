@@ -6,7 +6,8 @@
     "dev": "next dev",
     "build": "next build",
     "start": "next start",
-    "lint": "eslint"
+    "lint": "eslint",
+    "test": "node -e \"const fs=require('fs'); fs.rmSync('.tmp-tests', { recursive: true, force: true });\" && npx tsc --module nodenext --moduleResolution nodenext --target es2022 --outDir .tmp-tests --rootDir . lib/scoring.ts lib/scoring.test.ts lib/distance.ts lib/distance.test.ts lib/opening-hours.ts lib/opening-hours.test.ts lib/course-generator.ts lib/course-generator.test.ts && node .tmp-tests/lib/scoring.test.js && node .tmp-tests/lib/distance.test.js && node .tmp-tests/lib/opening-hours.test.js && node .tmp-tests/lib/course-generator.test.js"
   },
   "dependencies": {
     "@base-ui/react": "^1.7.0",

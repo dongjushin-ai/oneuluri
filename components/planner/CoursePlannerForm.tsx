@@ -6,6 +6,7 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import BudgetSelector from "@/components/planner/BudgetSelector";
 import PreferenceSlider from "@/components/planner/PreferenceSlider";
+import { mockPlaces } from "@/data/places";
 import type { BudgetRange, CourseRequest, PreferenceValue, TransportationMode, UserPreferences } from "@/types/course";
 
 type PreferenceKey = "sensibility" | "quiet" | "activity" | "valueForMoney";
@@ -14,7 +15,10 @@ type PreferencesState = Record<PreferenceKey, number>;
 
 const storageKey = "course-request";
 
-const mainPlaceOptions = ["서울숲", "연무장길 팝업", "디뮤지엄", "성수카페거리", "선택 안함"] as const;
+const mainPlaceOptions = [
+  { value: "", label: "선택 안 함" },
+  ...mockPlaces.map((place) => ({ value: place.id, label: place.name })),
+] as const;
 const transportationOptions = ["도보", "대중교통", "차량"] as const;
 const detailOptionLabels = ["짧은 동선 우선", "대기시간 회피", "비 오는 날 실내 중심"] as const;
 
@@ -52,7 +56,7 @@ export default function CoursePlannerForm() {
   const [startTime, setStartTime] = useState("");
   const [endTime, setEndTime] = useState("");
   const [budget, setBudget] = useState<number>(100000);
-  const [mainPlace, setMainPlace] = useState<(typeof mainPlaceOptions)[number]>("선택 안함");
+  const [mainPlaceId, setMainPlaceId] = useState<string>("");
   const [transportationMode, setTransportationMode] = useState<(typeof transportationOptions)[number]>("도보");
   const [detailOptions, setDetailOptions] = useState<string[]>([]);
   const [preferences, setPreferences] = useState<PreferencesState>({
@@ -90,6 +94,7 @@ export default function CoursePlannerForm() {
         quiet: toPreferenceValue(preferences.quiet),
         activity: toPreferenceValue(preferences.activity),
       } satisfies UserPreferences,
+      mainPlaceId: mainPlaceId || null,
     };
 
     window.sessionStorage.setItem(storageKey, JSON.stringify(request));
@@ -156,13 +161,13 @@ export default function CoursePlannerForm() {
             <div className="space-y-2">
               <label className="text-sm font-medium text-slate-700">메인 장소</label>
               <select
-                value={mainPlace}
-                onChange={(event) => setMainPlace(event.target.value as (typeof mainPlaceOptions)[number])}
+                value={mainPlaceId}
+                onChange={(event) => setMainPlaceId(event.target.value)}
                 className="w-full rounded-xl border border-slate-200 bg-white px-3 py-2.5 text-sm outline-none focus:border-orange-400"
               >
                 {mainPlaceOptions.map((option) => (
-                  <option key={option} value={option}>
-                    {option}
+                  <option key={option.value || "empty"} value={option.value}>
+                    {option.label}
                   </option>
                 ))}
               </select>

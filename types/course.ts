@@ -23,4 +23,9 @@ export interface CourseRequest {
   budget: BudgetRange;
   transportation_mode: TransportationMode;
   preferences: UserPreferences;
+  mainPlaceId: string | null;
+}
+
+export interface CourseOption {
+  reasons: string[];
 }

@@ -1,49 +1,102 @@
 "use client";
 
 import Link from "next/link";
+import { useMemo, useState } from "react";
 import { useParams } from "next/navigation";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogHeader,
+  DialogTitle,
+  DialogTrigger,
+} from "@/components/ui/dialog";
+import { getReplacementCandidates, replaceCourseStop } from "@/lib/course-generator";
+import type { GeneratedCourse } from "@/lib/course-generator";
+import type { CourseRequest } from "@/types/course";
+import type { Place } from "@/types/place";
 
-const courseDetails = {
-  shortest: {
-    title: "최단 동선 코스",
-    subtitle: "12:30 Brunch → 14:00 서울숲 → 16:00 Cafe → 18:20 Sunset Spot",
-    summary: "효율적인 이동과 여유로운 시간을 함께 잡은 짧은 코스예요.",
-    timeline: [
-      { time: "12:30", title: "브런치", note: "가벼운 식사와 대화" },
-      { time: "14:00", title: "서울숲 산책", note: "자연을 느끼며 천천히 이동" },
-      { time: "16:00", title: "카페 휴식", note: "디저트와 커피로 쉬어가기" },
-      { time: "18:20", title: "노을 포인트", note: "사진 촬영과 마무리" },
-    ],
-  },
-  mood: {
-    title: "분위기 중심 코스",
-    subtitle: "14:00 전시 → 15:30 디저트 → 17:00 루프탑 → 19:00 야경",
-    summary: "감성적인 공간과 조용한 분위기를 우선한 코스예요.",
-    timeline: [
-      { time: "14:00", title: "전시 공간", note: "아늑한 분위기에서 천천히 둘러보기" },
-      { time: "15:30", title: "디저트 스팟", note: "달콤한 간식으로 리셋" },
-      { time: "17:00", title: "루프탑 카페", note: "노을과 함께 쉬어가기" },
-      { time: "19:00", title: "야경 산책", note: "분위기 있는 마무리" },
-    ],
-  },
-  photo: {
-    title: "사진 중심 코스",
-    subtitle: "13:00 포토 스팟 → 15:00 베이커리 → 17:30 카페 → 20:00 야간 조명",
-    summary: "인스타 감성을 채우는 포토 위주의 일정이에요.",
-    timeline: [
-      { time: "13:00", title: "포토 스팟", note: "포즈를 취하기 좋은 장소" },
-      { time: "15:00", title: "베이커리 방문", note: "수다와 디저트 타임" },
-      { time: "17:30", title: "카페", note: "조명 좋은 공간에서 휴식" },
-      { time: "20:00", title: "야간 조명 거리", note: "마지막 장면을 남기기" },
-    ],
-  },
-} as const;
+function formatCurrency(value: number): string {
+  return `${value.toLocaleString()}원`;
+}
+
+function formatDuration(value: number): string {
+  return `${value}분`;
+}
+
+function formatDistance(value: number): string {
+  return `${value.toFixed(1)}km`;
+}
+
+function getCourseTitle(course: GeneratedCourse): string {
+  switch (course.type) {
+    case "MOOD":
+      return "분위기 중심 코스";
+    case "PHOTO":
+      return "사진 중심 코스";
+    default:
+      return "최단 동선 코스";
+  }
+}
 
 export default function CourseDetailPage() {
   const params = useParams<{ id: string }>();
-  const course = courseDetails[params.id as keyof typeof courseDetails] ?? courseDetails.shortest;
+  const [request] = useState<CourseRequest | null>(() => {
+    if (typeof window === "undefined") {
+      return null;
+    }
+
+    const storedRequest = window.sessionStorage.getItem("course-request");
+    return storedRequest ? (JSON.parse(storedRequest) as CourseRequest) : null;
+  });
+  const [courses, setCourses] = useState<GeneratedCourse[]>(() => {
+    if (typeof window === "undefined") {
+      return [];
+    }
+
+    const storedCourses = window.sessionStorage.getItem("generated-courses");
+    return storedCourses ? (JSON.parse(storedCourses) as GeneratedCourse[]) : [];
+  });
+  const [activeReplacementIndex, setActiveReplacementIndex] = useState<number | null>(null);
+  const [replacementCandidates, setReplacementCandidates] = useState<Place[]>([]);
+
+  const selectedCourse = useMemo(() => {
+    if (!courses.length) {
+      return null;
+    }
+    return courses.find((course) => course.id === params.id) ?? courses[0];
+  }, [courses, params.id]);
+
+  const handleReplaceStop = (index: number) => {
+    if (!selectedCourse || !request) {
+      return;
+    }
+
+    const candidates = getReplacementCandidates(selectedCourse, request, { isRainy: false, temperature: 24 }, [], index, undefined, request.mainPlaceId);
+    setActiveReplacementIndex(index);
+    setReplacementCandidates(candidates.map((candidate) => candidate.place));
+  };
+
+  const applyReplacement = (index: number, replacementPlace: Place) => {
+    if (!selectedCourse || !request) {
+      return;
+    }
+
+    const updatedCourse = replaceCourseStop(selectedCourse, request, { isRainy: false, temperature: 24 }, [], index, replacementPlace, undefined, request.mainPlaceId);
+    if (!updatedCourse) {
+      return;
+    }
+
+    const nextCourses = courses.map((course) => (course.id === selectedCourse.id ? updatedCourse : course));
+    setCourses(nextCourses);
+    if (typeof window !== "undefined") {
+      window.sessionStorage.setItem("generated-courses", JSON.stringify(nextCourses));
+    }
+    setActiveReplacementIndex(null);
+    setReplacementCandidates([]);
+  };
 
   return (
     <div className="min-h-screen bg-[radial-gradient(circle_at_top_left,_rgba(255,191,167,0.35),_transparent_40%),linear-gradient(135deg,_#fff7f2_0%,_#fffdfb_100%)] px-4 py-8 text-slate-800 sm:px-6 lg:px-8">
@@ -51,7 +104,7 @@ export default function CourseDetailPage() {
         <div className="flex flex-wrap items-center justify-between gap-3">
           <div>
             <p className="text-sm font-medium text-orange-600">상세 일정</p>
-            <h1 className="text-3xl font-semibold text-slate-900">{course.title}</h1>
+            <h1 className="text-3xl font-semibold text-slate-900">{selectedCourse ? getCourseTitle(selectedCourse) : "코스 상세"}</h1>
           </div>
           <Link href="/results">
             <Button variant="outline" className="border-orange-200 bg-white text-slate-700 hover:bg-orange-50">
@@ -60,43 +113,154 @@ export default function CourseDetailPage() {
           </Link>
         </div>
 
-        <Card className="border-orange-100 bg-white/90 shadow-[0_20px_60px_-25px_rgba(251,146,60,0.35)]">
-          <CardHeader>
-            <CardTitle className="text-xl font-semibold text-slate-900">{course.subtitle}</CardTitle>
-            <CardDescription className="text-sm text-slate-600">{course.summary}</CardDescription>
-          </CardHeader>
-          <CardContent className="grid gap-6 lg:grid-cols-[1.1fr_0.9fr]">
-            <div className="space-y-4">
-              <div className="rounded-2xl border border-orange-100 bg-orange-50/70 p-4">
-                <p className="text-sm font-semibold text-slate-700">타임라인</p>
-                <div className="mt-3 space-y-3">
-                  {course.timeline.map((item) => (
-                    <div key={item.time} className="rounded-xl border border-orange-100 bg-white p-3">
-                      <div className="flex items-center justify-between">
-                        <p className="font-semibold text-slate-900">{item.time}</p>
-                        <p className="text-sm text-orange-600">{item.title}</p>
+        {request ? (
+          <Card className="border-orange-100 bg-white/80 shadow-[0_20px_60px_-25px_rgba(244,114,182,0.35)]">
+            <CardHeader>
+              <CardTitle className="text-xl font-semibold text-slate-900">
+                선택한 조건
+              </CardTitle>
+              <CardDescription className="text-sm text-slate-600">
+                {request.date} · {request.start_time} ~ {request.end_time} · {request.location}
+              </CardDescription>
+            </CardHeader>
+          </Card>
+        ) : null}
+
+        {selectedCourse ? (
+          <Card className="border-orange-100 bg-white/90 shadow-[0_20px_60px_-25px_rgba(251,146,60,0.35)]">
+            <CardHeader>
+              <CardTitle className="text-xl font-semibold text-slate-900">
+                {selectedCourse.stops.map((stop) => stop.place.name).join(" → ")}
+              </CardTitle>
+              <CardDescription className="text-sm text-slate-600">
+                총 {selectedCourse.stops.length}개 장소 · 이동 {selectedCourse.totalTravelMinutes}분 · 거리 {formatDistance(selectedCourse.totalDistanceKm)}
+              </CardDescription>
+            </CardHeader>
+            <CardContent className="grid gap-6 lg:grid-cols-[1.1fr_0.9fr]">
+              <div className="space-y-4">
+                <div className="rounded-2xl border border-orange-100 bg-orange-50/70 p-4">
+                  <p className="text-sm font-semibold text-slate-700">타임라인</p>
+                  <div className="mt-3 space-y-3">
+                    {selectedCourse.stops.map((stop, index) => (
+                      <div key={`${stop.place.id}-${stop.arrivalTime}`} className="rounded-xl border border-orange-100 bg-white p-3">
+                        <div className="flex items-center justify-between gap-3">
+                          <p className="font-semibold text-slate-900">{stop.arrivalTime} ~ {stop.departureTime}</p>
+                          <p className="text-sm text-orange-600">{index + 1}. {stop.place.name}</p>
+                        </div>
+                        <div className="mt-2 flex flex-wrap gap-2 text-xs text-slate-600">
+                          <span className="rounded-full bg-orange-100 px-2.5 py-1">예상 비용 {formatCurrency(stop.place.avg_price)}</span>
+                          <span className="rounded-full bg-orange-100 px-2.5 py-1">
+                            {index === 0 ? "출발" : `이동 ${stop.travelMinutesFromPrevious}분`}
+                          </span>
+                          <span className="rounded-full bg-orange-100 px-2.5 py-1">점수 {stop.place.scores.photo}/5</span>
+                        </div>
+                        <p className="mt-2 text-sm text-slate-600">{stop.place.address}</p>
+                        {index > 0 ? (
+                          <div className="mt-3 flex flex-wrap items-center gap-2">
+                            <Button
+                              type="button"
+                              variant="outline"
+                              size="sm"
+                              className="border-orange-200 bg-white text-slate-700 hover:bg-orange-50"
+                              onClick={() => handleReplaceStop(index)}
+                            >
+                              장소 바꾸기
+                            </Button>
+                            {activeReplacementIndex === index && replacementCandidates.length > 0 ? (
+                              <div className="flex flex-wrap gap-2">
+                                {replacementCandidates.map((candidate) => (
+                                  <Button
+                                    key={candidate.id}
+                                    type="button"
+                                    size="sm"
+                                    className="bg-orange-500 text-white hover:bg-orange-600"
+                                    onClick={() => applyReplacement(index, candidate)}
+                                  >
+                                    {candidate.name}
+                                  </Button>
+                                ))}
+                              </div>
+                            ) : null}
+                          </div>
+                        ) : null}
                       </div>
-                      <p className="mt-1 text-sm text-slate-600">{item.note}</p>
+                    ))}
+                  </div>
+                </div>
+              </div>
+
+              <div className="space-y-4">
+                <div className="rounded-2xl border border-orange-100 bg-rose-50/70 p-4">
+                  <p className="text-sm font-semibold text-slate-700">이 코스를 추천한 이유</p>
+                  <ul className="mt-3 space-y-2 text-sm text-slate-600">
+                    {selectedCourse.reasons.map((reason) => (
+                      <li key={reason} className="rounded-xl border border-orange-100 bg-white px-3 py-2">
+                        {reason}
+                      </li>
+                    ))}
+                  </ul>
+                </div>
+
+                <div className="rounded-2xl border border-orange-100 bg-rose-50/70 p-4">
+                  <p className="text-sm font-semibold text-slate-700">코스 요약</p>
+                  <div className="mt-3 space-y-2 text-sm text-slate-600">
+                    <div className="flex items-center justify-between">
+                      <span>예상 총 비용</span>
+                      <span className="font-semibold text-slate-900">{formatCurrency(selectedCourse.totalCost)}</span>
                     </div>
-                  ))}
+                    <div className="flex items-center justify-between">
+                      <span>총 이동 시간</span>
+                      <span className="font-semibold text-slate-900">{formatDuration(selectedCourse.totalTravelMinutes)}</span>
+                    </div>
+                    <div className="flex items-center justify-between">
+                      <span>총 거리</span>
+                      <span className="font-semibold text-slate-900">{formatDistance(selectedCourse.totalDistanceKm)}</span>
+                    </div>
+                    <div className="flex items-center justify-between">
+                      <span>선호도 점수</span>
+                      <span className="font-semibold text-slate-900">{selectedCourse.averagePreferenceScore}/5</span>
+                    </div>
+                  </div>
                 </div>
-              </div>
-            </div>
 
-            <div className="space-y-4">
-              <div className="rounded-2xl border border-orange-100 bg-rose-50/70 p-4">
-                <p className="text-sm font-semibold text-slate-700">지도 미리보기</p>
-                <div className="mt-3 flex h-56 items-center justify-center rounded-2xl border border-dashed border-orange-200 bg-white text-sm text-slate-500">
-                  mock map container
+                <div className="rounded-2xl border border-orange-100 bg-white p-4">
+                  <p className="text-sm font-semibold text-slate-700">지도 미리보기</p>
+                  <div className="mt-3 flex h-56 items-center justify-center rounded-2xl border border-dashed border-orange-200 bg-orange-50/40 text-sm text-slate-500">
+                    mock map container
+                  </div>
                 </div>
-              </div>
 
-              <Button className="w-full rounded-2xl bg-[#ff6f61] py-6 text-base font-semibold text-white shadow-lg shadow-orange-200 transition hover:bg-[#ff5b45]">
-                🚨 여기서 일정 다시 짜기 (스마트 재조정)
-              </Button>
-            </div>
-          </CardContent>
-        </Card>
+                <Dialog>
+                  <DialogTrigger className="w-full rounded-2xl bg-[#ff6f61] py-6 text-base font-semibold text-white shadow-lg shadow-orange-200 transition hover:bg-[#ff5b45]">
+                    🚨 여기서 일정 다시 짜기 (스마트 재조정)
+                  </DialogTrigger>
+                  <DialogContent className="sm:max-w-md">
+                    <DialogHeader>
+                      <DialogTitle>스마트 재조정</DialogTitle>
+                      <DialogDescription>
+                        현재 선택된 코스 기준으로 일정 다시 짜기를 준비해요.
+                      </DialogDescription>
+                    </DialogHeader>
+                    <div className="space-y-2 text-sm text-slate-600">
+                      <p>선택된 코스: {getCourseTitle(selectedCourse)}</p>
+                      <p>총 {selectedCourse.stops.length}개 장소 · 예상 비용 {formatCurrency(selectedCourse.totalCost)}</p>
+                      <p>다음으로 추천되는 흐름은 현재 타임라인을 바탕으로 다시 조정됩니다.</p>
+                    </div>
+                  </DialogContent>
+                </Dialog>
+              </div>
+            </CardContent>
+          </Card>
+        ) : (
+          <Card className="border-orange-100 bg-white/90 shadow-[0_16px_40px_-20px_rgba(251,146,60,0.35)]">
+            <CardHeader>
+              <CardTitle className="text-xl font-semibold text-slate-900">코스를 불러올 수 없습니다.</CardTitle>
+              <CardDescription className="text-sm text-slate-600">
+                결과 페이지에서 다시 코스를 생성한 뒤 다시 시도해 주세요.
+              </CardDescription>
+            </CardHeader>
+          </Card>
+        )}
       </main>
     </div>
   );
