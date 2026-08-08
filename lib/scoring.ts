@@ -4,6 +4,8 @@ import type { UserPreferences } from "../types/course";
 export interface WeatherContext {
   isRainy: boolean;
   temperature: number;
+  precipitationProbability?: number;
+  sunsetTime?: string;
 }
 
 export type DetailedOption =
@@ -50,14 +52,16 @@ export function calculatePlaceScore(
   const value = toScore(place.scores.value * 0.9);
   const photo = toScore(place.scores.photo * 0.9);
 
-  const weatherScore = weather.isRainy && !place.indoor ? 20 : 100;
+  const isRainSensitiveOutdoor =
+    weather.isRainy && !place.indoor && (place.category === "PHOTO_SPOT" || place.category === "WALK");
+  const weatherScore = isRainSensitiveOutdoor ? 20 : 100;
   const fitScore =
     preferences.activity <= 2 && place.scores.activity >= 4 ? 60 : 100;
 
   const penalties: string[] = [];
   let penaltyTotal = 0;
 
-  if (weather.isRainy && !place.indoor) {
+  if (isRainSensitiveOutdoor) {
     const rainPenalty = clamp(Math.round((6 - place.scores.rain) * 4), 8, 24);
     penaltyTotal += rainPenalty;
     penalties.push("outdoor_in_rain");

@@ -3,7 +3,7 @@ import type { Place } from "../types/place";
 import { calculatePlaceScore, type DetailedOption, type WeatherContext } from "./scoring";
 import { calculateDistanceKm, estimateTravelMinutes } from "./distance";
 import { isPlaceOpenAt } from "./opening-hours";
-import { mockPlaces } from "../data/places";
+import { seongsuPlaces } from "../data/places";
 
 export interface CourseStop {
   place: Place;
@@ -37,6 +37,7 @@ export interface ReplacementCandidate {
 interface BuildOptions {
   request: CourseRequest;
   weather: WeatherContext;
+  places?: Place[];
   detailedOptions: DetailedOption[];
   selectedMainPlace?: Place;
   mainPlaceId?: string | null;
@@ -69,6 +70,22 @@ function buildDateTime(date: string, time: string): Date {
   const [year, month, day] = date.split("-").map((value) => Number.parseInt(value, 10));
   const [hours, minutes] = time.split(":").map((value) => Number.parseInt(value, 10));
   return new Date(year, month - 1, day, hours, minutes);
+}
+
+export function isPlaceValidForDate(place: Place, date: string): boolean {
+  return (!place.validFrom || date >= place.validFrom) && (!place.validUntil || date <= place.validUntil);
+}
+
+export function getPlacesValidForDate(places: Place[], date: string): Place[] {
+  return places.filter((place) => isPlaceValidForDate(place, date));
+}
+
+function isPlaceAvailableAt(place: Place, date: Date): boolean {
+  const dateText = `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}-${String(date.getDate()).padStart(2, "0")}`;
+  if (!isPlaceValidForDate(place, dateText)) {
+    return false;
+  }
+  return place.openingHoursSourceType === "NOT_APPLICABLE" || isPlaceOpenAt(place.opening_hours, date);
 }
 
 function getPreferenceScore(place: Place, preferences: UserPreferences): number {
@@ -111,9 +128,13 @@ function getBudgetLabel(request: CourseRequest): string {
   }
 }
 
-function buildReasons(course: GeneratedCourse, request: CourseRequest, fixedPlace: Place): string[] {
+function buildReasons(course: GeneratedCourse, request: CourseRequest, fixedPlace: Place, weather: WeatherContext): string[] {
   const reasons: string[] = [];
   reasons.push(`선택하신 ${fixedPlace.name}을 중심으로 동선을 최적화했어요`);
+
+  if (weather.sunsetTime && course.stops.some((stop) => stop.place.category === "PHOTO_SPOT")) {
+    reasons.push(`${weather.sunsetTime} 일몰 시간에 맞춰 포토스팟을 배치했어요`);
+  }
 
   if (course.totalDistanceKm <= 2.5) {
     reasons.push(`총 이동 거리 ${course.totalDistanceKm.toFixed(1)}km로 이동 부담이 적어요`);
@@ -219,7 +240,7 @@ function buildCourseMetrics(
     finalScore: computeCourseScore(recalculatedStops, request.preferences, weather, detailedOptions),
     reasons: [],
   };
-  nextCourse.reasons = buildReasons(nextCourse, request, fixedPlace);
+  nextCourse.reasons = buildReasons(nextCourse, request, fixedPlace, weather);
   return nextCourse;
 }
 
@@ -229,21 +250,24 @@ export function resolveMainPlace(
   detailedOptions: DetailedOption[],
   selectedMainPlace?: Place,
   mainPlaceId?: string | null,
+  places: Place[] = seongsuPlaces,
 ): Place {
   if (selectedMainPlace) {
-    return selectedMainPlace;
+    if (isPlaceValidForDate(selectedMainPlace, request.date)) {
+      return selectedMainPlace;
+    }
   }
 
   const normalizedMainPlaceId = mainPlaceId?.trim();
   if (normalizedMainPlaceId) {
-    const matchedPlace = mockPlaces.find((place) => place.id === normalizedMainPlaceId);
+    const matchedPlace = places.find((place) => place.id === normalizedMainPlaceId && isPlaceValidForDate(place, request.date));
     if (matchedPlace) {
       return matchedPlace;
     }
   }
 
-  const fallbackActivities = mockPlaces
-    .filter((place) => place.category === "ACTIVITY")
+  const fallbackActivities = places
+    .filter((place) => place.category === "ACTIVITY" && isPlaceValidForDate(place, request.date))
     .sort((left, right) => {
       const leftScore = candidateScore(left, request.preferences, weather, detailedOptions);
       const rightScore = candidateScore(right, request.preferences, weather, detailedOptions);
@@ -253,7 +277,7 @@ export function resolveMainPlace(
       return left.id.localeCompare(right.id);
     });
 
-  return fallbackActivities[0] ?? mockPlaces[0];
+  return fallbackActivities[0] ?? places[0] ?? seongsuPlaces[0];
 }
 
 export function getReplacementCandidates(
@@ -277,14 +301,15 @@ export function getReplacementCandidates(
   const usedIds = new Set(course.stops.map((stop) => stop.place.id));
   const transportationMode: TransportationMode = request.transportation_mode === "PUBLIC" ? "PUBLIC" : request.transportation_mode === "CAR" ? "CAR" : "WALK";
 
-  const candidates = mockPlaces
+  const candidates = seongsuPlaces
     .filter((place) => place.category === currentCategory)
     .filter((place) => !usedIds.has(place.id))
     .filter((place) => place.id !== fixedPlace.id)
+    .filter((place) => isPlaceValidForDate(place, request.date))
     .filter((place) => {
       const arrivalMinutes = parseTimeToMinutes(previousStop.departureTime) + estimateTravelMinutes(previousStop.place.lat, previousStop.place.lng, place.lat, place.lng, transportationMode);
       const arrivalDate = buildDateTime(request.date, formatTime(arrivalMinutes));
-      return isPlaceOpenAt(place.opening_hours, arrivalDate);
+      return isPlaceAvailableAt(place, arrivalDate);
     })
     .filter((place) => {
       const arrivalMinutes = parseTimeToMinutes(previousStop.departureTime) + estimateTravelMinutes(previousStop.place.lat, previousStop.place.lng, place.lat, place.lng, transportationMode);
@@ -357,16 +382,17 @@ export function replaceCourseStop(
 }
 
 export function generateCourses(options: BuildOptions): CourseGenerationResult {
-  const { request, weather, detailedOptions, selectedMainPlace, mainPlaceId } = options;
+  const { request, weather, places = seongsuPlaces, detailedOptions, selectedMainPlace, mainPlaceId } = options;
   const startMinutes = parseTimeToMinutes(request.start_time);
   const endMinutes = parseTimeToMinutes(request.end_time);
   const transportationMode: TransportationMode = request.transportation_mode === "PUBLIC" ? "PUBLIC" : request.transportation_mode === "CAR" ? "CAR" : "WALK";
 
-  const fixedPlace = resolveMainPlace(request, weather, detailedOptions, selectedMainPlace, mainPlaceId);
-  const restaurants = mockPlaces.filter((place) => place.category === "RESTAURANT");
-  const activities = mockPlaces.filter((place) => place.category === "ACTIVITY");
-  const cafes = mockPlaces.filter((place) => place.category === "CAFE");
-  const photoSpots = mockPlaces.filter((place) => place.category === "PHOTO_SPOT");
+  const fixedPlace = resolveMainPlace(request, weather, detailedOptions, selectedMainPlace, mainPlaceId, places);
+  const validPlaces = getPlacesValidForDate(places, request.date);
+  const restaurants = validPlaces.filter((place) => place.category === "RESTAURANT");
+  const activities = validPlaces.filter((place) => place.category === "ACTIVITY");
+  const cafes = validPlaces.filter((place) => place.category === "CAFE");
+  const photoSpots = validPlaces.filter((place) => place.category === "PHOTO_SPOT");
 
   const baseStops = [
     { category: "RESTAURANT", pick: restaurants },
@@ -390,7 +416,7 @@ export function generateCourses(options: BuildOptions): CourseGenerationResult {
     const addStop = (place: Place, travelMinutes: number): boolean => {
       const arrivalTime = currentTime + travelMinutes;
       const arrivalDate = buildDateTime(request.date, formatTime(arrivalTime));
-      if (!isPlaceOpenAt(place.opening_hours, arrivalDate)) {
+      if (!isPlaceAvailableAt(place, arrivalDate)) {
         return false;
       }
 
@@ -417,7 +443,7 @@ export function generateCourses(options: BuildOptions): CourseGenerationResult {
 
     const initialStop = fixedPlace;
     const initialArrivalDate = buildDateTime(request.date, request.start_time);
-    if (!isPlaceOpenAt(initialStop.opening_hours, initialArrivalDate)) {
+    if (!isPlaceAvailableAt(initialStop, initialArrivalDate)) {
       return null;
     }
 
@@ -476,7 +502,7 @@ export function generateCourses(options: BuildOptions): CourseGenerationResult {
       reasons: [],
     };
 
-    course.reasons = buildReasons(course, request, fixedPlace);
+    course.reasons = buildReasons(course, request, fixedPlace, weather);
 
     return course;
   };

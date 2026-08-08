@@ -5,6 +5,22 @@ export type PlaceCategory =
   | "PHOTO_SPOT"
   | "WALK";
 
+export type PlaceDataStatus = "VERIFIED" | "PARTIAL" | "ESTIMATED";
+
+export type PlaceSourceField = "NAME" | "ADDRESS" | "COORDINATES" | "OPENING_HOURS" | "PRICE";
+
+export interface PlaceSource {
+  title: string;
+  url: string;
+  publisher: string;
+  accessedAt: string;
+  supportedFields: PlaceSourceField[];
+}
+
+export type PriceSourceType = "OFFICIAL" | "THIRD_PARTY" | "EDITORIAL_ESTIMATE" | "NOT_APPLICABLE";
+
+export type OpeningHoursSourceType = "OFFICIAL" | "THIRD_PARTY" | "ESTIMATED" | "NOT_APPLICABLE";
+
 export interface OpeningHour {
   dayOfWeek: number;
   open: string;
@@ -25,6 +41,14 @@ export interface Place {
   tags: string[];
   indoor: boolean;
   opening_hours: OpeningHour[];
+  dataStatus: PlaceDataStatus;
+  sources: PlaceSource[];
+  priceSourceType: PriceSourceType;
+  openingHoursSourceType: OpeningHoursSourceType;
+  lastVerifiedAt: string;
+  validFrom?: string;
+  validUntil?: string;
+  scoreSource: "EDITORIAL";
   scores: {
     romantic: number;
     instagram: number;

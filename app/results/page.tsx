@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { Button } from "@/components/ui/button";
 import {
   Card,
@@ -10,9 +10,12 @@ import {
   CardHeader,
   CardTitle,
 } from "@/components/ui/card";
-import { mockPlaces } from "@/data/places";
+import { seongsuPlaces } from "@/data/places";
 import { generateCourses, resolveMainPlace, type GeneratedCourse } from "@/lib/course-generator";
 import type { CourseRequest } from "@/types/course";
+import { fetchWeather, getFallbackWeather, type WeatherData } from "@/lib/weather";
+import { getPlacesWithFallback, type PlaceLoadResult } from "@/lib/supabase/places";
+import type { Place } from "@/types/place";
 
 const courseTypeMeta: Record<GeneratedCourse["type"], { title: string; subtitle: string }> = {
   SHORTEST: {
@@ -50,34 +53,68 @@ export default function ResultsPage() {
     const storedRequest = window.sessionStorage.getItem("course-request");
     return storedRequest ? (JSON.parse(storedRequest) as CourseRequest) : null;
   });
-  const [courses] = useState<GeneratedCourse[]>(() => {
-    if (typeof window === "undefined") {
-      return [];
+  const [courses, setCourses] = useState<GeneratedCourse[]>([]);
+  const [weather, setWeather] = useState<WeatherData>(getFallbackWeather);
+  const [availablePlaces, setAvailablePlaces] = useState<Place[]>(seongsuPlaces);
+  const [placeDataSource, setPlaceDataSource] = useState<PlaceLoadResult["source"] | null>(null);
+  const [isLoading, setIsLoading] = useState(Boolean(request));
+
+  useEffect(() => {
+    if (!request) {
+      return;
     }
 
-    const storedRequest = window.sessionStorage.getItem("course-request");
-    if (!storedRequest) {
-      return [];
-    }
+    let active = true;
+    const weatherPromise = fetchWeather({
+      date: request.date,
+      startTime: request.start_time,
+      endTime: request.end_time,
+    });
+    const placesPromise = getPlacesWithFallback().catch(
+      (): PlaceLoadResult => ({
+        places: seongsuPlaces,
+        source: "LOCAL_FALLBACK",
+        warning: "Unexpected place loading failure.",
+      }),
+    );
 
-    const parsedRequest = JSON.parse(storedRequest) as CourseRequest;
-    const resolvedMainPlace = resolveMainPlace(parsedRequest, { isRainy: false, temperature: 24 }, [], undefined, parsedRequest.mainPlaceId);
-    const result = generateCourses({
-      request: parsedRequest,
-      weather: { isRainy: false, temperature: 24 },
-      detailedOptions: [],
-      selectedMainPlace: resolvedMainPlace,
-      mainPlaceId: parsedRequest.mainPlaceId,
+    void Promise.all([weatherPromise, placesPromise]).then(([weatherData, placeResult]) => {
+      if (!active) {
+        return;
+      }
+      const resolvedMainPlace = resolveMainPlace(
+        request,
+        weatherData,
+        [],
+        undefined,
+        request.mainPlaceId,
+        placeResult.places,
+      );
+      const result = generateCourses({
+        request,
+        weather: weatherData,
+        places: placeResult.places,
+        detailedOptions: [],
+        selectedMainPlace: resolvedMainPlace,
+        mainPlaceId: request.mainPlaceId,
+      });
+      setWeather(weatherData);
+      setAvailablePlaces(placeResult.places);
+      setPlaceDataSource(placeResult.source);
+      setCourses(result.courses);
+      setIsLoading(false);
+      window.sessionStorage.setItem("generated-courses", JSON.stringify(result.courses));
     });
 
-    window.sessionStorage.setItem("generated-courses", JSON.stringify(result.courses));
-    return result.courses;
-  });
+    return () => {
+      active = false;
+    };
+  }, [request]);
 
   const hasCourses = courses.length > 0;
   const usesAutoFallback = Boolean(
     request &&
-      (request.mainPlaceId === null || request.mainPlaceId.trim() === "" || !mockPlaces.some((place) => place.id === request.mainPlaceId))
+      (request.mainPlaceId === null || request.mainPlaceId.trim() === "" || !availablePlaces.some((place) => place.id === request.mainPlaceId))
   );
 
   return (
@@ -87,6 +124,9 @@ export default function ResultsPage() {
           <div>
             <p className="text-sm font-medium text-orange-600">실제 코스 추천 결과</p>
             <h1 className="text-3xl font-semibold text-slate-900">오늘의 코스 후보</h1>
+            <div className="mt-2 inline-flex rounded-full border border-orange-200 bg-white/90 px-3 py-1 text-xs text-slate-700 shadow-sm">
+              {weather.isRainy ? "🌧️" : "🌤️"} 성수동 {weather.temperature}°C | 🌅 일몰 {weather.sunsetTime} | 강수확률 {weather.precipitationProbability}%
+            </div>
           </div>
           <Link href="/">
             <Button variant="outline" className="border-orange-200 bg-white text-slate-700 hover:bg-orange-50">
@@ -118,7 +158,11 @@ export default function ResultsPage() {
           </Card>
         ) : null}
 
-        {hasCourses ? (
+        {isLoading ? (
+          <Card className="border-orange-100 bg-white/90">
+            <CardContent className="py-8 text-center text-sm text-slate-600">날씨를 반영해 코스를 만들고 있어요…</CardContent>
+          </Card>
+        ) : hasCourses ? (
           <div className="grid gap-6 lg:grid-cols-3">
             {courses.map((course) => (
               <Link key={course.id} href={`/results/${course.id}`} className="block">
@@ -199,6 +243,14 @@ export default function ResultsPage() {
             </CardContent>
           </Card>
         )}
+        <footer className="border-t border-orange-100 pt-4 text-center text-xs text-slate-500">
+          <p>
+            날씨 데이터: Open-Meteo · 장소 데이터: {placeDataSource === "SUPABASE" ? "Supabase" : placeDataSource === "LOCAL_FALLBACK" ? "로컬 데이터" : "확인 중"}
+          </p>
+          {placeDataSource === "LOCAL_FALLBACK" ? (
+            <p className="mt-1 text-amber-700">일부 장소 정보를 로컬 데이터로 불러왔습니다.</p>
+          ) : null}
+        </footer>
       </main>
     </div>
   );

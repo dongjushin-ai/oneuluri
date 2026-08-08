@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
-import { generateCourses, getReplacementCandidates, replaceCourseStop, resolveMainPlace } from "./course-generator";
-import { mockPlaces } from "../data/places";
+import { generateCourses, getPlacesValidForDate, getReplacementCandidates, replaceCourseStop, resolveMainPlace } from "./course-generator";
+import { seongsuPlaces } from "../data/places";
 import type { CourseRequest } from "../types/course";
 
 const baseRequest: CourseRequest = {
@@ -20,13 +20,73 @@ const baseRequest: CourseRequest = {
 };
 
 function runCourseGeneratorTests(): void {
+  assert.equal(seongsuPlaces.length, 30, "Expected exactly 30 curated Seongsu places");
+  assert.ok(
+    seongsuPlaces.every(
+      (place) => place.lat > 37.535 && place.lat < 37.55 && place.lng > 127.04 && place.lng < 127.07,
+    ),
+    "Every place coordinate must be strictly within the Seongsu map bounds",
+  );
+
+  const expiredPlace = { ...seongsuPlaces[0], id: "expired-test-place", validUntil: "2026-08-02" };
+  assert.deepEqual(
+    getPlacesValidForDate([seongsuPlaces[0], expiredPlace], baseRequest.date).map((place) => place.id),
+    [seongsuPlaces[0].id],
+    "Expected expired places to be excluded",
+  );
+
+  assert.ok(
+    seongsuPlaces.every((place) => place.sources.length > 0 || place.dataStatus === "ESTIMATED"),
+    "Every place must have a source or be explicitly estimated",
+  );
+
+  const verifiedFields = ["NAME", "ADDRESS", "COORDINATES", "OPENING_HOURS"] as const;
+  assert.ok(
+    seongsuPlaces
+      .filter((place) => place.dataStatus === "VERIFIED")
+      .every((place) => {
+        const supportedFields = new Set(place.sources.flatMap((source) => source.supportedFields));
+        return place.sources.length > 0 && verifiedFields.every((field) => supportedFields.has(field));
+      }),
+    "Verified places must have sources supporting identity, location, and opening hours",
+  );
+
+  assert.ok(
+    seongsuPlaces
+      .filter((place) => place.openingHoursSourceType === "NOT_APPLICABLE")
+      .every((place) => place.opening_hours.length === 0 && place.avg_price === 0),
+    "Non-business public spaces must not contain fabricated hours or costs",
+  );
+
+  assert.ok(seongsuPlaces.every((place) => place.scoreSource === "EDITORIAL"), "Subjective scores must be editorial");
+
   const result = generateCourses({
     request: baseRequest,
     weather: { isRainy: false, temperature: 24 },
     detailedOptions: [],
-    selectedMainPlace: mockPlaces[0],
+    selectedMainPlace: seongsuPlaces[0],
     mainPlaceId: baseRequest.mainPlaceId,
   });
+
+  const suppliedPlaces = [
+    seongsuPlaces.find((place) => place.category === "RESTAURANT")!,
+    seongsuPlaces.find((place) => place.category === "CAFE")!,
+    seongsuPlaces.find((place) => place.category === "ACTIVITY")!,
+    seongsuPlaces.find((place) => place.category === "PHOTO_SPOT")!,
+  ];
+  const suppliedPlaceIds = new Set(suppliedPlaces.map((place) => place.id));
+  const suppliedResult = generateCourses({
+    request: baseRequest,
+    weather: { isRainy: false, temperature: 24 },
+    places: suppliedPlaces,
+    detailedOptions: [],
+    selectedMainPlace: suppliedPlaces[2],
+  });
+  assert.ok(suppliedResult.courses.length > 0, "Expected courses from a supplied place collection");
+  assert.ok(
+    suppliedResult.courses.every((course) => course.stops.every((stop) => suppliedPlaceIds.has(stop.place.id))),
+    "Course generation must only use the supplied place collection",
+  );
 
   assert.ok(result.courses.length >= 1, "Expected at least one generated course");
   assert.ok(result.courses.every((course) => course.stops.length >= 2), "Expected each course to include the fixed stop and more stops");
@@ -44,7 +104,7 @@ function runCourseGeneratorTests(): void {
     request: { ...baseRequest, start_time: "23:00", end_time: "23:30" },
     weather: { isRainy: false, temperature: 24 },
     detailedOptions: [],
-    selectedMainPlace: mockPlaces[0],
+    selectedMainPlace: seongsuPlaces[0],
     mainPlaceId: baseRequest.mainPlaceId,
   });
   assert.equal(closedResult.courses.length, 0, "Closed-day schedule should be rejected");
@@ -57,7 +117,7 @@ function runCourseGeneratorTests(): void {
     request: budgetRequest,
     weather: { isRainy: false, temperature: 24 },
     detailedOptions: [],
-    selectedMainPlace: mockPlaces[4],
+    selectedMainPlace: seongsuPlaces[4],
     mainPlaceId: budgetRequest.mainPlaceId,
   });
   assert.ok(budgetResult.courses.length <= 3, "Budget-constrained generation should stay within the result limit");
@@ -66,13 +126,13 @@ function runCourseGeneratorTests(): void {
     request: baseRequest,
     weather: { isRainy: false, temperature: 24 },
     detailedOptions: [],
-    selectedMainPlace: mockPlaces[0],
+    selectedMainPlace: seongsuPlaces[0],
     mainPlaceId: baseRequest.mainPlaceId,
   });
   const ids = distinctResult.courses.map((course) => course.type);
   assert.equal(new Set(ids).size, ids.length, "Expected distinct course types in the result");
 
-  const selectedPlace = mockPlaces[0];
+  const selectedPlace = seongsuPlaces[0];
   const selectedResult = generateCourses({
     request: { ...baseRequest, mainPlaceId: selectedPlace.id },
     weather: { isRainy: false, temperature: 24 },
@@ -83,7 +143,7 @@ function runCourseGeneratorTests(): void {
   const selectedOccurrences = selectedResult.courses[0]?.stops.filter((stop) => stop.place.id === selectedPlace.id).length ?? 0;
   assert.equal(selectedOccurrences, 1, "Expected the selected main place to appear exactly once");
 
-  const otherSelectedPlace = mockPlaces[1];
+  const otherSelectedPlace = seongsuPlaces[1];
   const otherSelectedResult = generateCourses({
     request: { ...baseRequest, mainPlaceId: otherSelectedPlace.id },
     weather: { isRainy: false, temperature: 24 },

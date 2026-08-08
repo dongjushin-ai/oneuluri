@@ -6,8 +6,9 @@
     "dev": "next dev",
     "build": "next build",
     "start": "next start",
+    "seed:generate": "tsx scripts/generate-place-seed.ts",
     "lint": "eslint",
-    "test": "node -e \"const fs=require('fs'); fs.rmSync('.tmp-tests', { recursive: true, force: true });\" && npx tsc --module nodenext --moduleResolution nodenext --target es2022 --outDir .tmp-tests --rootDir . lib/scoring.ts lib/scoring.test.ts lib/distance.ts lib/distance.test.ts lib/opening-hours.ts lib/opening-hours.test.ts lib/course-generator.ts lib/course-generator.test.ts && node .tmp-tests/lib/scoring.test.js && node .tmp-tests/lib/distance.test.js && node .tmp-tests/lib/opening-hours.test.js && node .tmp-tests/lib/course-generator.test.js"
+    "test": "node -e \"const fs=require('fs'); fs.rmSync('.tmp-tests', { recursive: true, force: true });\" && npx tsc --module nodenext --moduleResolution nodenext --target es2022 --outDir .tmp-tests --rootDir . lib/scoring.ts lib/scoring.test.ts lib/distance.ts lib/distance.test.ts lib/opening-hours.ts lib/opening-hours.test.ts lib/course-generator.ts lib/course-generator.test.ts lib/weather.ts lib/weather.test.ts lib/supabase/server.ts lib/supabase/admin.ts lib/supabase/places.ts lib/supabase/places.test.ts lib/supabase/shared-courses.ts lib/supabase/shared-courses.test.ts scripts/generate-place-seed.ts scripts/generate-place-seed.test.ts && node .tmp-tests/lib/scoring.test.js && node .tmp-tests/lib/distance.test.js && node .tmp-tests/lib/opening-hours.test.js && node .tmp-tests/lib/course-generator.test.js && node .tmp-tests/lib/weather.test.js && node .tmp-tests/lib/supabase/places.test.js && node .tmp-tests/lib/supabase/shared-courses.test.js && node .tmp-tests/scripts/generate-place-seed.test.js"
   },
   "dependencies": {
     "@base-ui/react": "^1.7.0",
@@ -32,6 +33,7 @@
     "eslint": "^9",
     "eslint-config-next": "16.3.0",
     "tailwindcss": "^4",
+    "tsx": "^4.23.11",
     "typescript": "^5"
   }
 }

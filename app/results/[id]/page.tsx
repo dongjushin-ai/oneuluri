@@ -4,6 +4,7 @@ import Link from "next/link";
 import { useMemo, useState } from "react";
 import { useParams } from "next/navigation";
 import { Button } from "@/components/ui/button";
+import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import {
   Dialog,
@@ -16,7 +17,23 @@ import {
 import { getReplacementCandidates, replaceCourseStop } from "@/lib/course-generator";
 import type { GeneratedCourse } from "@/lib/course-generator";
 import type { CourseRequest } from "@/types/course";
-import type { Place } from "@/types/place";
+import type { Place, PlaceDataStatus } from "@/types/place";
+import CourseMap from "@/components/map/CourseMap";
+
+const verificationBadge: Record<PlaceDataStatus, { label: string; className: string }> = {
+  VERIFIED: {
+    label: "공식 검증",
+    className: "border-emerald-200 bg-emerald-50 text-emerald-700",
+  },
+  PARTIAL: {
+    label: "정보 확인됨",
+    className: "border-sky-200 bg-sky-50 text-sky-700",
+  },
+  ESTIMATED: {
+    label: "추정 정보",
+    className: "border-orange-200 bg-orange-50 text-orange-700",
+  },
+};
 
 function formatCurrency(value: number): string {
   return `${value.toLocaleString()}원`;
@@ -61,6 +78,10 @@ export default function CourseDetailPage() {
   });
   const [activeReplacementIndex, setActiveReplacementIndex] = useState<number | null>(null);
   const [replacementCandidates, setReplacementCandidates] = useState<Place[]>([]);
+  const [isSharing, setIsSharing] = useState(false);
+  const [shareDialogOpen, setShareDialogOpen] = useState(false);
+  const [shareUrl, setShareUrl] = useState<string | null>(null);
+  const [shareError, setShareError] = useState<string | null>(null);
 
   const selectedCourse = useMemo(() => {
     if (!courses.length) {
@@ -96,6 +117,42 @@ export default function CourseDetailPage() {
     }
     setActiveReplacementIndex(null);
     setReplacementCandidates([]);
+  };
+
+  const handleShareCourse = async () => {
+    if (!selectedCourse || !request || isSharing) {
+      return;
+    }
+    setIsSharing(true);
+    setShareError(null);
+    setShareUrl(null);
+    setShareDialogOpen(true);
+
+    try {
+      const response = await fetch("/api/shared-courses", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ request, course: selectedCourse }),
+      });
+      const body: unknown = await response.json();
+      if (!response.ok) {
+        const message =
+          typeof body === "object" && body !== null && "error" in body &&
+          typeof body.error === "object" && body.error !== null && "message" in body.error &&
+          typeof body.error.message === "string"
+            ? body.error.message
+            : "코스 공유 링크를 만들지 못했습니다.";
+        throw new Error(message);
+      }
+      if (typeof body !== "object" || body === null || !("id" in body) || typeof body.id !== "string") {
+        throw new Error("공유 링크 응답이 올바르지 않습니다.");
+      }
+      setShareUrl(new URL(`/course/${body.id}`, window.location.origin).toString());
+    } catch (error: unknown) {
+      setShareError(error instanceof Error ? error.message : "코스 공유 중 오류가 발생했습니다.");
+    } finally {
+      setIsSharing(false);
+    }
   };
 
   return (
@@ -145,7 +202,12 @@ export default function CourseDetailPage() {
                       <div key={`${stop.place.id}-${stop.arrivalTime}`} className="rounded-xl border border-orange-100 bg-white p-3">
                         <div className="flex items-center justify-between gap-3">
                           <p className="font-semibold text-slate-900">{stop.arrivalTime} ~ {stop.departureTime}</p>
-                          <p className="text-sm text-orange-600">{index + 1}. {stop.place.name}</p>
+                          <div className="flex flex-wrap items-center justify-end gap-2">
+                            <p className="text-sm text-orange-600">{index + 1}. {stop.place.name}</p>
+                            <Badge variant="outline" className={verificationBadge[stop.place.dataStatus].className}>
+                              {verificationBadge[stop.place.dataStatus].label}
+                            </Badge>
+                          </div>
                         </div>
                         <div className="mt-2 flex flex-wrap gap-2 text-xs text-slate-600">
                           <span className="rounded-full bg-orange-100 px-2.5 py-1">예상 비용 {formatCurrency(stop.place.avg_price)}</span>
@@ -153,6 +215,9 @@ export default function CourseDetailPage() {
                             {index === 0 ? "출발" : `이동 ${stop.travelMinutesFromPrevious}분`}
                           </span>
                           <span className="rounded-full bg-orange-100 px-2.5 py-1">점수 {stop.place.scores.photo}/5</span>
+                          {stop.place.openingHoursSourceType === "NOT_APPLICABLE" ? (
+                            <span className="rounded-full bg-emerald-50 px-2.5 py-1 text-emerald-700">상시개방</span>
+                          ) : null}
                         </div>
                         <p className="mt-2 text-sm text-slate-600">{stop.place.address}</p>
                         {index > 0 ? (
@@ -224,11 +289,45 @@ export default function CourseDetailPage() {
                 </div>
 
                 <div className="rounded-2xl border border-orange-100 bg-white p-4">
-                  <p className="text-sm font-semibold text-slate-700">지도 미리보기</p>
-                  <div className="mt-3 flex h-56 items-center justify-center rounded-2xl border border-dashed border-orange-200 bg-orange-50/40 text-sm text-slate-500">
-                    mock map container
+                  <p className="text-sm font-semibold text-slate-700">코스 지도</p>
+                  <div className="mt-3 w-full overflow-hidden rounded-2xl">
+                    <CourseMap stops={selectedCourse.stops} />
                   </div>
+                  <p className="mt-3 text-xs leading-relaxed text-slate-500">
+                    현재 연결선은 코스 순서를 나타내며 실제 도보 경로와 다를 수 있습니다.
+                  </p>
                 </div>
+
+                <Button
+                  type="button"
+                  variant="outline"
+                  className="w-full border-orange-200 bg-white py-6 text-base font-semibold text-orange-700 hover:bg-orange-50"
+                  disabled={!request || isSharing}
+                  onClick={() => void handleShareCourse()}
+                >
+                  {isSharing ? "공유 링크 만드는 중…" : "코스 공유하기"}
+                </Button>
+
+                <Dialog open={shareDialogOpen} onOpenChange={setShareDialogOpen}>
+                  <DialogContent className="sm:max-w-md">
+                    <DialogHeader>
+                      <DialogTitle>코스 공유하기</DialogTitle>
+                      <DialogDescription>현재 조정된 일정 그대로 공유 링크에 저장합니다.</DialogDescription>
+                    </DialogHeader>
+                    {isSharing ? <p className="text-sm text-slate-600">공유 링크를 만들고 있어요…</p> : null}
+                    {shareError ? <p className="rounded-xl bg-red-50 p-3 text-sm text-red-700">{shareError}</p> : null}
+                    {shareUrl ? (
+                      <div className="space-y-3">
+                        <p className="break-all rounded-xl border border-orange-100 bg-orange-50/60 p-3 text-sm text-slate-700">
+                          {shareUrl}
+                        </p>
+                        <a href={shareUrl} className="inline-flex text-sm font-medium text-orange-700 underline underline-offset-4">
+                          공유 페이지 열기
+                        </a>
+                      </div>
+                    ) : null}
+                  </DialogContent>
+                </Dialog>
 
                 <Dialog>
                   <DialogTrigger className="w-full rounded-2xl bg-[#ff6f61] py-6 text-base font-semibold text-white shadow-lg shadow-orange-200 transition hover:bg-[#ff5b45]">

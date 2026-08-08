@@ -15,6 +15,12 @@ const samplePlace: Place = {
   tags: ["outdoor"],
   indoor: false,
   opening_hours: [{ dayOfWeek: 1, open: "10:00", close: "20:00" }],
+  dataStatus: "ESTIMATED",
+  sources: [],
+  priceSourceType: "EDITORIAL_ESTIMATE",
+  openingHoursSourceType: "ESTIMATED",
+  lastVerifiedAt: "2026-08-06",
+  scoreSource: "EDITORIAL",
   scores: {
     romantic: 4,
     instagram: 4,

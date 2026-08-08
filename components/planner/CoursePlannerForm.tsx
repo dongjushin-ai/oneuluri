@@ -6,7 +6,7 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import BudgetSelector from "@/components/planner/BudgetSelector";
 import PreferenceSlider from "@/components/planner/PreferenceSlider";
-import { mockPlaces } from "@/data/places";
+import { seongsuPlaces } from "@/data/places";
 import type { BudgetRange, CourseRequest, PreferenceValue, TransportationMode, UserPreferences } from "@/types/course";
 
 type PreferenceKey = "sensibility" | "quiet" | "activity" | "valueForMoney";
@@ -17,7 +17,7 @@ const storageKey = "course-request";
 
 const mainPlaceOptions = [
   { value: "", label: "선택 안 함" },
-  ...mockPlaces.map((place) => ({ value: place.id, label: place.name })),
+  ...seongsuPlaces.map((place) => ({ value: place.id, label: place.name })),
 ] as const;
 const transportationOptions = ["도보", "대중교통", "차량"] as const;
 const detailOptionLabels = ["짧은 동선 우선", "대기시간 회피", "비 오는 날 실내 중심"] as const;
