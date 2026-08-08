@@ -4,6 +4,7 @@ interface KakaoLatLng {
 }
 
 interface KakaoMap {
+  relayout(): void;
   setBounds(bounds: KakaoLatLngBounds): void;
   setLevel(level: number): void;
 }

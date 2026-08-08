@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState, useSyncExternalStore } from "react";
 import { Button } from "@/components/ui/button";
 import {
   Card,
@@ -44,20 +44,23 @@ function formatDistance(value: number): string {
   return `${value.toFixed(1)}km`;
 }
 
+const subscribeToHydration = () => () => undefined;
+
 export default function ResultsPage() {
-  const [request] = useState<CourseRequest | null>(() => {
-    if (typeof window === "undefined") {
+  const hasHydrated = useSyncExternalStore(subscribeToHydration, () => true, () => false);
+  const request = useMemo(() => {
+    if (!hasHydrated) return null;
+    try {
+      const storedRequest = window.sessionStorage.getItem("course-request");
+      return storedRequest ? (JSON.parse(storedRequest) as CourseRequest) : null;
+    } catch {
       return null;
     }
-
-    const storedRequest = window.sessionStorage.getItem("course-request");
-    return storedRequest ? (JSON.parse(storedRequest) as CourseRequest) : null;
-  });
+  }, [hasHydrated]);
   const [courses, setCourses] = useState<GeneratedCourse[]>([]);
   const [weather, setWeather] = useState<WeatherData>(getFallbackWeather);
   const [availablePlaces, setAvailablePlaces] = useState<Place[]>(seongsuPlaces);
   const [placeDataSource, setPlaceDataSource] = useState<PlaceLoadResult["source"] | null>(null);
-  const [isLoading, setIsLoading] = useState(Boolean(request));
 
   useEffect(() => {
     if (!request) {
@@ -102,7 +105,6 @@ export default function ResultsPage() {
       setAvailablePlaces(placeResult.places);
       setPlaceDataSource(placeResult.source);
       setCourses(result.courses);
-      setIsLoading(false);
       window.sessionStorage.setItem("generated-courses", JSON.stringify(result.courses));
     });
 
@@ -112,6 +114,7 @@ export default function ResultsPage() {
   }, [request]);
 
   const hasCourses = courses.length > 0;
+  const isLoading = Boolean(request && placeDataSource === null && !hasCourses);
   const usesAutoFallback = Boolean(
     request &&
       (request.mainPlaceId === null || request.mainPlaceId.trim() === "" || !availablePlaces.some((place) => place.id === request.mainPlaceId))

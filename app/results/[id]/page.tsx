@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { useMemo, useState } from "react";
+import { useMemo, useState, useSyncExternalStore } from "react";
 import { useParams } from "next/navigation";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -58,24 +58,30 @@ function getCourseTitle(course: GeneratedCourse): string {
   }
 }
 
+const subscribeToHydration = () => () => undefined;
+
+function parseSessionValue<T>(key: string): T | null {
+  try {
+    const value = window.sessionStorage.getItem(key);
+    return value ? (JSON.parse(value) as T) : null;
+  } catch {
+    return null;
+  }
+}
+
 export default function CourseDetailPage() {
   const params = useParams<{ id: string }>();
-  const [request] = useState<CourseRequest | null>(() => {
-    if (typeof window === "undefined") {
-      return null;
-    }
-
-    const storedRequest = window.sessionStorage.getItem("course-request");
-    return storedRequest ? (JSON.parse(storedRequest) as CourseRequest) : null;
-  });
-  const [courses, setCourses] = useState<GeneratedCourse[]>(() => {
-    if (typeof window === "undefined") {
-      return [];
-    }
-
-    const storedCourses = window.sessionStorage.getItem("generated-courses");
-    return storedCourses ? (JSON.parse(storedCourses) as GeneratedCourse[]) : [];
-  });
+  const hasLoadedSession = useSyncExternalStore(subscribeToHydration, () => true, () => false);
+  const request = useMemo(
+    () => (hasLoadedSession ? parseSessionValue<CourseRequest>("course-request") : null),
+    [hasLoadedSession],
+  );
+  const storedCourses = useMemo(
+    () => (hasLoadedSession ? parseSessionValue<GeneratedCourse[]>("generated-courses") ?? [] : []),
+    [hasLoadedSession],
+  );
+  const [adjustedCourses, setAdjustedCourses] = useState<GeneratedCourse[] | null>(null);
+  const courses = adjustedCourses ?? storedCourses;
   const [activeReplacementIndex, setActiveReplacementIndex] = useState<number | null>(null);
   const [replacementCandidates, setReplacementCandidates] = useState<Place[]>([]);
   const [isSharing, setIsSharing] = useState(false);
@@ -111,7 +117,7 @@ export default function CourseDetailPage() {
     }
 
     const nextCourses = courses.map((course) => (course.id === selectedCourse.id ? updatedCourse : course));
-    setCourses(nextCourses);
+    setAdjustedCourses(nextCourses);
     if (typeof window !== "undefined") {
       window.sessionStorage.setItem("generated-courses", JSON.stringify(nextCourses));
     }
@@ -156,12 +162,12 @@ export default function CourseDetailPage() {
   };
 
   return (
-    <div className="min-h-screen bg-[radial-gradient(circle_at_top_left,_rgba(255,191,167,0.35),_transparent_40%),linear-gradient(135deg,_#fff7f2_0%,_#fffdfb_100%)] px-4 py-8 text-slate-800 sm:px-6 lg:px-8">
+    <div className="min-h-screen overflow-x-hidden bg-[radial-gradient(circle_at_top_left,_rgba(255,191,167,0.35),_transparent_40%),linear-gradient(135deg,_#fff7f2_0%,_#fffdfb_100%)] px-4 py-5 text-slate-800 sm:px-6 sm:py-8 lg:px-8">
       <main className="mx-auto flex max-w-5xl flex-col gap-6">
         <div className="flex flex-wrap items-center justify-between gap-3">
-          <div>
+          <div className="min-w-0">
             <p className="text-sm font-medium text-orange-600">상세 일정</p>
-            <h1 className="text-3xl font-semibold text-slate-900">{selectedCourse ? getCourseTitle(selectedCourse) : "코스 상세"}</h1>
+            <h1 className="break-words text-2xl font-semibold text-slate-900 sm:text-3xl">{selectedCourse ? getCourseTitle(selectedCourse) : "코스 상세"}</h1>
           </div>
           <Link href="/results">
             <Button variant="outline" className="border-orange-200 bg-white text-slate-700 hover:bg-orange-50">
@@ -183,10 +189,14 @@ export default function CourseDetailPage() {
           </Card>
         ) : null}
 
-        {selectedCourse ? (
+        {!hasLoadedSession ? (
+          <Card className="border-orange-100 bg-white/90">
+            <CardContent className="py-8 text-center text-sm text-slate-600">코스를 불러오고 있어요…</CardContent>
+          </Card>
+        ) : selectedCourse ? (
           <Card className="border-orange-100 bg-white/90 shadow-[0_20px_60px_-25px_rgba(251,146,60,0.35)]">
             <CardHeader>
-              <CardTitle className="text-xl font-semibold text-slate-900">
+              <CardTitle className="break-words text-lg font-semibold text-slate-900 sm:text-xl">
                 {selectedCourse.stops.map((stop) => stop.place.name).join(" → ")}
               </CardTitle>
               <CardDescription className="text-sm text-slate-600">
@@ -309,7 +319,7 @@ export default function CourseDetailPage() {
                 </Button>
 
                 <Dialog open={shareDialogOpen} onOpenChange={setShareDialogOpen}>
-                  <DialogContent className="sm:max-w-md">
+                  <DialogContent className="max-h-[calc(100dvh-2rem)] overflow-y-auto sm:max-w-md">
                     <DialogHeader>
                       <DialogTitle>코스 공유하기</DialogTitle>
                       <DialogDescription>현재 조정된 일정 그대로 공유 링크에 저장합니다.</DialogDescription>
@@ -321,7 +331,7 @@ export default function CourseDetailPage() {
                         <p className="break-all rounded-xl border border-orange-100 bg-orange-50/60 p-3 text-sm text-slate-700">
                           {shareUrl}
                         </p>
-                        <a href={shareUrl} className="inline-flex text-sm font-medium text-orange-700 underline underline-offset-4">
+                        <a href={shareUrl} className="inline-flex min-h-11 items-center rounded-xl border border-orange-200 px-4 text-sm font-medium text-orange-700 underline underline-offset-4">
                           공유 페이지 열기
                         </a>
                       </div>
@@ -333,7 +343,7 @@ export default function CourseDetailPage() {
                   <DialogTrigger className="w-full rounded-2xl bg-[#ff6f61] py-6 text-base font-semibold text-white shadow-lg shadow-orange-200 transition hover:bg-[#ff5b45]">
                     🚨 여기서 일정 다시 짜기 (스마트 재조정)
                   </DialogTrigger>
-                  <DialogContent className="sm:max-w-md">
+                  <DialogContent className="max-h-[calc(100dvh-2rem)] overflow-y-auto sm:max-w-md">
                     <DialogHeader>
                       <DialogTitle>스마트 재조정</DialogTitle>
                       <DialogDescription>

@@ -1,4 +1,5 @@
 import Link from "next/link";
+import type { Metadata } from "next";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
@@ -13,6 +14,47 @@ function courseTitle(type: SharedCourse["courseType"]): string {
   if (type === "MOOD") return "분위기 중심 코스";
   if (type === "PHOTO") return "사진 중심 코스";
   return "최단 동선 코스";
+}
+
+function courseDescription(shared: SharedCourse): string {
+  const placeNames = shared.course.stops.map((stop) => stop.place.name).join(" → ");
+  return `${shared.request.location}에서 즐기는 ${placeNames} 코스를 확인해 보세요.`;
+}
+
+async function loadSharedCourse(id: string): Promise<SharedCourse | null> {
+  try {
+    return await getSharedCourse(id);
+  } catch {
+    return null;
+  }
+}
+
+export async function generateMetadata({
+  params,
+}: {
+  params: Promise<{ id: string }>;
+}): Promise<Metadata> {
+  const { id } = await params;
+  const shared = await loadSharedCourse(id);
+  const title = shared ? `${courseTitle(shared.courseType)} | 오늘우리` : "공유 코스 | 오늘우리";
+  const description = shared
+    ? courseDescription(shared)
+    : "성수동 맞춤 데이트 코스를 확인해 보세요.";
+
+  return {
+    title,
+    description,
+    openGraph: {
+      type: "website",
+      title,
+      description,
+    },
+    twitter: {
+      card: "summary",
+      title,
+      description,
+    },
+  };
 }
 
 function UnavailableSharedCourse() {
@@ -33,20 +75,15 @@ function UnavailableSharedCourse() {
 
 export default async function SharedCoursePage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
-  let shared: SharedCourse | null = null;
-  try {
-    shared = await getSharedCourse(id);
-  } catch {
-    shared = null;
-  }
+  const shared = await loadSharedCourse(id);
 
   return (
-    <div className="min-h-screen bg-[radial-gradient(circle_at_top_left,_rgba(255,191,167,0.35),_transparent_40%),linear-gradient(135deg,_#fff7f2_0%,_#fffdfb_100%)] px-4 py-8 text-slate-800 sm:px-6 lg:px-8">
+    <div className="min-h-screen overflow-x-hidden bg-[radial-gradient(circle_at_top_left,_rgba(255,191,167,0.35),_transparent_40%),linear-gradient(135deg,_#fff7f2_0%,_#fffdfb_100%)] px-4 py-5 text-slate-800 sm:px-6 sm:py-8 lg:px-8">
       <main className="mx-auto flex max-w-5xl flex-col gap-6">
         <div className="flex flex-wrap items-center justify-between gap-3">
-          <div>
+          <div className="min-w-0">
             <Badge variant="outline" className="border-sky-200 bg-sky-50 text-sky-700">공유된 코스</Badge>
-            <h1 className="mt-2 text-3xl font-semibold text-slate-900">
+            <h1 className="mt-2 break-words text-2xl font-semibold text-slate-900 sm:text-3xl">
               {shared ? courseTitle(shared.courseType) : "공유 코스"}
             </h1>
           </div>
@@ -57,13 +94,13 @@ export default async function SharedCoursePage({ params }: { params: Promise<{ i
           <>
             <Card className="border-orange-100 bg-white/90 shadow-[0_20px_60px_-25px_rgba(251,146,60,0.35)]">
               <CardHeader>
-                <CardTitle>{shared.course.stops.map((stop) => stop.place.name).join(" → ")}</CardTitle>
+                <CardTitle className="break-words text-lg sm:text-xl">{shared.course.stops.map((stop) => stop.place.name).join(" → ")}</CardTitle>
                 <CardDescription>
                   {shared.request.date} · {shared.request.start_time} ~ {shared.request.end_time} · {shared.request.location}
                 </CardDescription>
               </CardHeader>
               <CardContent className="grid gap-6 lg:grid-cols-[1.1fr_0.9fr]">
-                <section className="space-y-3">
+                <section className="min-w-0 space-y-3">
                   <h2 className="text-sm font-semibold text-slate-700">타임라인</h2>
                   {shared.course.stops.map((stop, index) => (
                     <article key={`${stop.place.id}-${stop.arrivalTime}`} className="rounded-xl border border-orange-100 bg-orange-50/50 p-4">
@@ -81,7 +118,7 @@ export default async function SharedCoursePage({ params }: { params: Promise<{ i
                   ))}
                 </section>
 
-                <aside className="space-y-4">
+                <aside className="min-w-0 space-y-4">
                   <div className="rounded-2xl border border-orange-100 bg-white p-4">
                     <h2 className="text-sm font-semibold text-slate-700">코스 요약</h2>
                     <dl className="mt-3 space-y-2 text-sm text-slate-600">

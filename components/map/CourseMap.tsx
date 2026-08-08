@@ -143,6 +143,20 @@ export default function CourseMap({ stops }: CourseMapProps) {
         } else {
           map.setBounds(bounds);
         }
+
+        const resizeObserver = new ResizeObserver(() => {
+          window.requestAnimationFrame(() => {
+            if (disposed) return;
+            map.relayout();
+            if (positions.length === 1) {
+              map.setLevel(4);
+            } else {
+              map.setBounds(bounds);
+            }
+          });
+        });
+        resizeObserver.observe(containerRef.current);
+        cleanups.push(() => resizeObserver.disconnect());
       })
       .catch(() => {
         if (!disposed) {
@@ -158,7 +172,7 @@ export default function CourseMap({ stops }: CourseMapProps) {
 
   if (!appKey) {
     return (
-      <div className="flex h-80 w-full items-center justify-center rounded-2xl border border-dashed border-orange-200 bg-orange-50/40 px-6 text-center text-sm text-slate-600 lg:h-[420px]">
+      <div className="flex h-[320px] w-full min-w-0 items-center justify-center rounded-2xl border border-dashed border-orange-200 bg-orange-50/40 px-6 text-center text-sm text-slate-600 lg:h-[420px]">
         카카오 지도 API 키가 설정되지 않았습니다.
       </div>
     );
@@ -166,11 +180,11 @@ export default function CourseMap({ stops }: CourseMapProps) {
 
   if (error) {
     return (
-      <div className="flex h-80 w-full items-center justify-center rounded-2xl border border-dashed border-orange-200 bg-orange-50/40 px-6 text-center text-sm text-slate-600 lg:h-[420px]">
+      <div className="flex h-[320px] w-full min-w-0 items-center justify-center rounded-2xl border border-dashed border-orange-200 bg-orange-50/40 px-6 text-center text-sm text-slate-600 lg:h-[420px]">
         {error}
       </div>
     );
   }
 
-  return <div ref={containerRef} className="h-80 w-full overflow-hidden rounded-2xl lg:h-[420px]" aria-label="코스 경로 지도" />;
+  return <div ref={containerRef} className="h-[320px] w-full min-w-0 overflow-hidden rounded-2xl transition-[height] duration-200 lg:h-[420px]" aria-label="코스 경로 지도" />;
 }
